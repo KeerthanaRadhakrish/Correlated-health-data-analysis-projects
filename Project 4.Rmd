@@ -1,0 +1,230 @@
+---
+title: "Project 4"
+author: "Keerthana Radhakrishnan"
+date: "3/2/2020"
+output: word_document
+---
+```{r}
+require(Hmisc)
+require(multcomp)
+require(nlme)
+require(mosaic)
+```
+
+
+
+```{r}
+osteo<-read.csv("Osteocalcindata.csv",as.is=TRUE,sep=",",header=TRUE)
+```
+
+```{r}
+attach(osteo)
+ost1<-reshape(osteo,varying=c("OC0","OC1","OC2","OC3"),v.names="OC",times = c(0,0.5,1,1.5),timevar = "dose",idvar = "id",new.row.names = 1:length(c(OC0,OC1,OC2,OC3)),direction="long",drop="ID1")
+ost<-ost1[order(ost1$id),]
+ost<-ost[,c(5,1,2,3,4)]
+rownames(ost) <- NULL
+ost
+```
+```{r}
+male<-ost[which(ost$Sex=="M"),]
+female<-ost[which(ost$Sex=="F"),]
+```
+
+
+
+**Exploratory data analysis:**
+1. summary statistics:
+```{r}
+attach(ost)
+t1 <- favstats(OC~Sex)[,-c(3,5,10)]
+t2 <- favstats(OC0~Sex, data = osteo)[,-c(3,5,10)]
+t3 <- favstats(OC1~Sex, data = osteo)[,-c(3,5,10)]
+t4 <- favstats(OC2~Sex, data = osteo)[,-c(3,5,10)]
+t5 <- favstats(OC3~Sex, data = osteo)[,-c(3,5,10)]
+tt <- rbind(t1,t2,t3,t4,t5)
+
+rownames(tt) <- c("Total-Female","Total-Male","OC0-Female","OC0-Male","OC1-Female","OC1-Male",
+                  "OC2-Female","OC2-Male","OC3-Female","OC3-Male")
+
+tt
+```
+2. Profile plot:
+```{r}
+#Profile Plot of Males
+plot1 <- ggplot(male, aes(dose, OC, group=id))+
+  geom_line(col="blue")+
+  ylim(0,40)+
+  ggtitle("Spaghetti plot for Males")
+
+#Profile Plot of Females
+plot2 <- ggplot(female, aes(dose, OC, group=id))+
+  geom_line(col="red")+
+  ylim(0,40)+
+  ggtitle("Spaghetti plot for Females")
+
+##Profile Plot of Data with Mean lines
+plot3 <-  ggplot(ost, aes(dose, OC, group=id))+
+  geom_line(aes(col=Sex))+
+  stat_smooth(aes(group=Sex, col=Sex),se=F,size=2)+
+  stat_summary(aes(group=Sex,lty=Sex),geom="point",fun.y = mean,size=2)+
+  theme_bw()+
+  ylim(0,40)+
+  ggtitle("Sphagetti plot")
+plot1
+plot2
+plot3
+
+```
+Based on the above spaghetti plot, we can expect differences in the mean osteocalcin levels for males and females at doses 0 and 0.5, but there might be no no/slight difference in the mean difference of males and females at doses 1.0 and 1.5.
+
+**(b) Model building:**
+```{r}
+attach(ost)
+mod1 <- lme(OC~Male * dose, random = ~dose|id, method = "ML")
+summary(mod1)
+# Independent model
+mod.ind <- gls(OC~Male * dose)
+m2 <- summary(mod.ind)$AIC
+
+#Compound Symmetry
+mod.cs <- gls(OC ~ Male * dose, correlation = corCompSymm(form = ~1|id))
+m3 <- summary(mod.cs)$AIC
+
+# AR1 
+mod.ar1 <- gls(OC ~ Male * dose, correlation = corAR1(form = ~1|id))
+m4 <- summary(mod.ar1)$AIC
+
+# MA 1
+mod.ma1 <- gls(OC ~ Male *dose, correlation = corARMA(p=0,q=1,form = ~1|id))
+m5 <- summary(mod.ma1)$AIC
+
+
+# ARMA 11
+mod.arma <- gls(OC~ Male * dose, correlation = corARMA(p=1,q=1,form = ~1|id))
+m6 <- summary(mod.arma)$AIC
+
+# Unstructured
+mod.unstr <- gls(OC ~ Male * dose, correlation = corSymm(form = ~1|id))
+m7 <- summary(mod.unstr)$AIC
+
+
+# Selected model uses the unstructured correlation matrix and considers different variance across group.
+
+corr_mat<- rbind(m2,m3,m4,m5,m6,m7)
+rownames(corr_mat) <- c("Independent","Compound Symmetry","AR1","MA1","ARMA (1,1)", "Unstructured")
+colnames(corr_mat) <- "AIC"
+corr_mat
+```
+The AIC is least for the unstructured correlation matrix which is 470.12. 
+```{r}
+# Unstructured correlation matrix: Different variance across dose
+mod.var.dose <- gls(OC~ Sex * dose, correlation = corSymm(form = ~1|id), weights = varIdent(form = ~1|dose))
+m8 <- summary(mod.var.dose)$AIC
+
+# Unstructured correlation matrix: Different variance across Groups 
+mod.var.group <- gls(OC ~ Sex * dose, correlation = corSymm(form = ~1|id), weights = varIdent(form = ~1|Sex))
+m9 <- summary(mod.var.group)$AIC
+
+unstr_var<-rbind(m8,m9)
+colnames(unstr_var)<-"AIC"
+rownames(unstr_var)<-c("Unstructured: Different variance across Dose","Unstructured: Different Variance across Group")
+unstr_var
+```
+The preferred correlation matrix that will be used by the model is the unstructured correlation matrix with different variance across groups.
+
+**(c) Modelling the Mean:**
+
+*(A) Linear Trends with Different Intercepts but same slopes*
+```{r}
+
+mod.same <-  gls(OC~ Male + factor(dose), method= "ML",correlation = corSymm(form = ~1|id), weights = varIdent(form = ~1|Sex))
+summary(mod.same)
+```
+*(B) Linear Trends with Different Intercepts and Different Slopes*
+```{r}
+mod.diff <- gls(OC ~ Male * factor(dose), method= "ML",correlation = corSymm(form = ~1|id), weights = varIdent(form = ~1|Sex))
+summary(mod.diff)
+```
+*(C) Seperate Quadratic Trends for each Group*
+```{r}
+ost$sq.dose <- ost$dose^2
+ost$dose <- factor(ost$dose)
+ost$sq.dose <- factor(ost$sq.dose)
+mod.quad<- gls(OC ~ Male*sq.dose, data=ost, method= "ML",correlation = corSymm(form = ~1|id), weights = varIdent(form = ~1|Sex))
+summary(mod.quad)
+```
+**(d)The final model will be:**
+$$y_{ij} = \beta_0 + \beta_1\text{Male}_i + \beta_2D_2 + \beta_3D_3 + \beta_4D_4 + \beta_5\text{Male*D2} + \beta_6\text{Male*D3} + \beta_7\text{Male*D4} + \epsilon_{ij}$$
+$$ y_{ij} = \begin{bmatrix} y_{i1} \\ y_{i2} \\ y_{i3} \\ y_{i4} \end{bmatrix} \overset{\text{ind}} \sim MVN \left( \begin{bmatrix} \mu_{i1} \\ \mu_{i2} \\ \mu_{i3} \\ \mu_{i4} \end{bmatrix}, \Sigma_{4\times4} \right)   $$
+$$\Sigma = \begin{pmatrix}  \sigma_{11} & \sigma_{12} & \sigma_{13} & \sigma_{14} \\ & \sigma_{22} & \sigma_{23} & \sigma_{24} \\ &  & \sigma_{33} & \sigma_{34} \\ & & &  \sigma_{44} \end{pmatrix}$$
+$$\mu_{i1} = \beta_0 + \beta_1\text{Male}_i$$
+$$\mu_{i2} = \beta_0 + \beta_1\text{Male}_i + \beta_2D_2 + \beta_5\text{Male}\times D2 $$
+$$\mu_{i3} =  \beta_0 + \beta_1\text{Male}_i  + \beta_3D_3 +  \beta_6\text{Male} \times D3$$
+$$\mu_{i4} = \beta_0 + \beta_1\text{Male}_i  + \beta_4D_4  + \beta_7\text{Male} \times D4$$
+```{r}
+summary(mod.diff)
+c<-intervals(mod.diff)
+c
+```
+*(e)Testing for slope of Females means:*
+$$H_o : \beta_2 + \beta_3 + \beta_4 = 0$$
+
+```{r}
+mod.fem <- glht(mod.diff,matrix(c(0,0,1,1,1,0,0,0),1, length(coef(mod.diff))) )
+summary(mod.fem)
+confint(mod.fem)
+```
+*testing significance of Slope of males:*
+$$H_o : \beta_0 + \beta_1 + \beta_2 + \beta_3 + \beta_4 + \beta_5 + \beta_6+ \beta_7= 0$$
+
+```{r}
+mod.m<- glht(mod.diff,linfct = matrix(c(0,1,1,1,1,1,1,1),1, length(coef(mod.diff))) )
+summary(mod.m)
+confint(mod.m)
+```
+(f)
+```{r}
+difference<-  glht(mod.diff,matrix(c(0,0,0,0,-1,0,0,-1),1, length(coef(mod.diff))))
+confint(difference)
+```
+*(g)*
+```{r}
+
+male0<- glht(mod.diff,matrix(c(1,1,0,0,0,0,0,0),1, length(coef(mod.diff))))
+male05<-glht(mod.diff,matrix(c(1,1,1,0,0,1,0,0),1, length(coef(mod.diff))))
+male10<- glht(mod.diff,matrix(c(1,1,0,1,0,0,1,0),1, length(coef(mod.diff))))
+male15<- glht(mod.diff,matrix(c(1,1,0,0,1,0,0,1),1, length(coef(mod.diff))))
+fm0<- glht(mod.diff,matrix(c(1,0,0,0,0,0,0,0),1, length(coef(mod.diff))))
+fm05<- glht(mod.diff,matrix(c(1,0,1,0,0,0,0,0),1, length(coef(mod.diff))))
+fm10<- glht(mod.diff,matrix(c(1,0,0,1,0,0,0,0),1, length(coef(mod.diff))))
+fm15<- glht(mod.diff,matrix(c(1,0,0,0,1,0,0,0),1, length(coef(mod.diff))))
+
+
+dif0<- glht(mod.diff,matrix(c(0,1,0,0,0,0,0,0),1, length(coef(mod.diff))))
+dif05<- glht(mod.diff,matrix(c(0,1,0,0,0,1,0,0),1, length(coef(mod.diff))))
+dif10<- glht(mod.diff, matrix(c(0,1,0,0,0,0,1,0),1, length(coef(mod.diff))))
+dif15<- glht(mod.diff,matrix(c(0,1,0,0,0,0,0,1),1, length(coef(mod.diff))))
+
+x1 <- confint(male0)$confint
+x2 <- confint(male05)$confint
+x3 <- confint(male10)$confint
+x4 <- confint(male15)$confint
+x5 <- confint(fm0)$confint
+x6 <- confint(fm05)$confint
+x7 <- confint(fm10)$confint
+x8 <- confint(fm15)$confint
+x9 <- confint(dif0)$confint
+x10 <- confint(dif05)$confint
+x11 <- confint(dif10)$confint
+x12 <- confint(dif15)$confint
+
+est <- rbind(x1[1,],x2[1,],x3[1,],x4[1,],x5[1,],x6[1,],x7[1,],x8[1,],x9[1,],x10[1,],x11[1,],x2[1,])
+
+
+rownames(est) <- c("Male at 0","Male at 0.5","Male at 1","Male at 1.5","Female at 0","Female at 0.5","Female at 1","Female at 1.5","(Male-Female) at 0",
+                  "(Male-Female) at 0.5","(Male-Female) at 1.0","(Male-Female) at 1.5")
+
+est
+```
+(h)
+

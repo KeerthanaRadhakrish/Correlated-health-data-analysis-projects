@@ -1,0 +1,303 @@
+---
+title: "Project 2"
+author: "Keerthana Radhakrishnan"
+date: "1/30/2020"
+output: word_document
+---
+```{r}
+library(dplyr)
+library(mgcv)
+library(tidyr)
+library(Hmisc)
+library(nortest)
+library(lattice)
+library(nlme)
+library(lme4)
+library(gmodels)
+```
+
+```{r}
+sat<-read.csv("SATdata.csv",sep=",",as.is=TRUE,header=TRUE)
+sat
+```
+Creating a new categorical variable "HighSalary":
+```{r}
+median(sat$Salary)
+sat$HighSalary<-ifelse(sat$Salary>=33.2875,1,0)
+```
+a)
+LOWESS curve for High salary states:
+```{r}
+sat.high<-filter(sat,HighSalary==1)
+plot(SATscore~Percent,data=sat.high,col="Purple",lwd=1.5,main="SATScore vs Percent in high salary states")
+lines(lowess(sat.high$SATscore~sat.high$Percent,f=1.0),lwd=2,lty=5,col="maroon")
+```
+Fitting the data using Splines for High salary states:
+```{r}
+mod.high<-gam(SATscore~s(Percent),data=sat.high)
+plot(mod.high,ylab="f(Percent)",col="blue",lwd=1.5,main="SATScore vs Percent- High salary states")
+```
+Interpretation:Both the plots above show that the association between the SATScore and the percent of students taking the exam is non-linear in high salary states.
+
+b)
+LOWESS curve for low salary states:
+```{r}
+sat.low<-filter(sat,HighSalary==0)
+plot(SATscore~Percent,data=sat.low,col="red",lwd=1.5,main="SATScore vs Percent in low salary states")
+lines(lowess(sat.low$SATscore~sat.low$Percent,f=1.0),col="blue",lwd=2,lty=5)
+```
+Fitting the data using splines for Low salary states:
+```{r}
+mod.low<-gam(SATscore~s(Percent),data=sat.low)
+plot(mod.low,ylab="f(Percent)",col="dark green",lwd=1.5,main="SATScore vs Percent- Low salary states")
+```
+Interpretation: The above two plots show that the SATScore and percent of students in Low salary states have a non-linear association.
+
+c) Building a semiparametric regression model:
+```{r}
+mod<-gam(SATscore~HighSalary+s(Percent),data=sat)
+summary(mod)
+plot(mod)
+```
+Interpretation: The SAT score for High salary states is approximately 32 units higher than the SAT score for low salary states, after adjusting for the percentage of students taking the exam.
+The plot shows a non-linear trend between SATScore and Percent.
+
+2. 
+```{r}
+diasorin<-read.csv("DiasorinData.csv",header=TRUE,as.is=TRUE,sep=",")
+d1<-gather(diasorin,"category","values",1:3)
+d1<-na.omit(d1)
+d1$category<-as.factor(d1$category)
+d1$category<-relevel(d1$category, ref="normal")
+```
+a) Exploratory data analysis
+```{r}
+ds<- function(x){round(c(MEAN=mean(x,na.rm=TRUE),MEDIAN=median(x,na.rm=TRUE),MIN=min(x,na.rm=TRUE),MAX=max(x,na.rm=TRUE),SD=sd(x,na.rm=TRUE)),1)}
+mApply(d1$values,d1$category, ds)
+boxplot(values~category,data=d1,main="Boxplots showing Diasorin scores for different Bone Turnover groups",col="grey")
+```
+Interpretation: From the above boxplots, we can see that the three categories of bone turnover have unequal variances.
+
+b) Model Building: 
+```{r}
+d1.mod <- lm(values~category, data=d1)
+summary(d1.mod)
+```
+Checking model assumptions:
+```{r}
+par(mfrow=c(1,2))
+
+plot(fitted(d1.mod),resid(d1.mod),main="residuals vs fitted plots")
+lines(lowess(fitted(d1.mod),resid(d1.mod)))
+
+qqnorm(resid(d1.mod))
+qqline(resid(d1.mod))
+
+ad.test(resid(d1.mod))
+```
+Interpretation: The p value in the Anderson-Darling test is lesser than 0.05, there is no sufficient evidence that the data is normally distributed. The qq plot and the residual vs fitted plots also show non-linearity with a possible right-skewed data. 
+
+Using Log transformation for the response variable 'value':
+```{r}
+mod.log<-lm(log(values)~category,data=d1)
+summary(mod.log)
+boxplot(log(values)~category,data=d1,main="Boxplot-log(Diasorin score) & Bone Turnover groups",col="grey")
+```
+```{r}
+confint(mod.log)
+```
+```{r}
+c1 <- estimable(mod.log,c(1,0,0),conf.int = 0.95) 
+c2 <- estimable(mod.log,c(1,1,0),conf.int = 0.95) 
+c3 <- estimable(mod.log,c(1,0,1),conf.int = 0.95) 
+c4 <- estimable(mod.log,c(0,1,0),conf.int = 0.95) #Low vs High (Relative Median)
+c5 <- estimable(mod.log,c(0,0,1),conf.int = 0.95) #Normal vs High (relative median)
+c6 <- estimable(mod.log,c(0,1,-1),conf.int = 0.95) # Low vs Normal (relative Median)
+cc <- rbind(c1,c2,c3,c4,c5,c6)
+con.int <- cc[,c(1,c(6,7,5))]
+rownames(con.int) <- c("Normal Level", "High Level","Low level", "Normal vs High","Normal vs Low", "Low vs High")
+adj.p <- p.adjust(con.int[,4], method = "holm")
+adj.p
+con.int <- cbind(con.int,adj.p)
+#pander(cc)
+con.int
+```
+
+Interpretation:
+
+Checking model assumptions:
+```{r}
+par(mfrow=c(1,2))
+
+plot(fitted(mod.log),resid(mod.log))
+lines(lowess(fitted(mod.log),resid(mod.log)))
+
+qqnorm(resid(mod.log))
+qqline(resid(mod.log))
+
+ad.test(resid(mod.log))
+```
+The Anderson-Darling test p value is 0.22 which is greater than the significance level 0.05. Hence, we fail to reject the null hypothesis that the data is normally distributed.
+The residual and qqplots also show a linear trend giving us no evidence that the data is violating the linearity and normality assumptions.
+
+The reprsentation of final model using beta coefficients and σ:
+ln(value)~ \beta_0 +\beta_1(categoryhigh)+\beta_2(categorylow)+ϵ
+ϵ∼┴ind N(0,σ^2)
+
+Median(y)=e^(β_0+β_1 Low+β_2 Medium)
+Median(y)={■(β_o&High Bone Turnover
+@β_0+β_1&Low Bone Turnover
+@β_0+β_2&Medium Bone Turnover)┤
+
+Define the variables that you use
+β_0 is the coefficient of the log measure from the Diasorin test for patients with high bone turnover.
+ln(y) refers to the log transformed measure from the Diasorin test found in each patient
+
+c) a table of point estimates and 95% confidence intervals for parameters of interest, including for the mean or median response in each of the 3 groups and the 3 pairwise comparisons between groups (a total of 6 parameters).
+```{r}
+
+```
+
+
+
+3.
+```{r}
+exercise<-read.csv("Exercise1Data.csv",sep=",",as.is=TRUE,header=TRUE)
+```
+
+```{r}
+ex1<-gather(exercise,"repetitions","measure",3:9)
+ex1
+```
+Exploratory Data Analysis
+a) Numerical statistics:
+```{r}
+ds<- function(x){round(c(MEAN=mean(x,na.rm=TRUE),MEDIAN=median(x,na.rm=TRUE),MIN=min(x,na.rm=TRUE),MAX=max(x,na.rm=TRUE),CV=100*sd(x)/mean(x),SD=sd(x,na.rm=TRUE)),1)}
+mApply(ex1$measure,ex1$Subject, ds)
+```
+b) Trellis plot:
+```{r}
+Day <- rep(c(1,2,3,4,5,6,7),16)
+xyplot(ex1$measure~Day|ex1$Subject,layout=c(4,4),main="Trellis plot: Strength against Days by Subject",type='p',panel = function (x,y){panel.xyplot(x,y,col = "dark blue");panel.loess(x,y,span=1.0,col = "maroon",lty=1,lwd=1.5)},xlab = "Days", ylab = "Strength",aspect = "fill",strip = FALSE)
+```
+Interpretation: The above plots show the association between the strength measure and the days. In some subjects, there is no association between the strength and the day (given we see hosrizontal lines) while some subjects have a negative linear relationship between the two variables. However, very few subjects show a slightly positive linear association between the strength and the days. Overall, we can see that there is a between-subject variance of the strength measure against the days.
+
+c) Boxplots:
+```{r}
+measure<-ex1$measure
+Subject<-ex1$Subject
+Days2 <- factor(Day,labels=c("0","2","4","6","8","10","12"))
+length(Days2)
+length(ex1$measure)
+length(ex1$Subject)
+boxplot(ex1$measure~Days2,range=0,style.bxp="old",boxwex = 0.6,ylab="measures of strength",xlab="Days",xlim=c(.7,7.6),col="pink", main="Boxplots with dotplots- Strength measure vs Day within Subjects")
+lines(rep(1.5,16), measure[Day==1],type="p")
+lines(rep(2.5,16), measure[Day==2],type="p")
+lines(rep(3.5,16), measure[Day==3],type="p")
+lines(rep(4.5,16), measure[Day==4],type="p")
+lines(rep(5.5,16), measure[Day==5],type="p")
+lines(rep(6.5,16), measure[Day==6],type="p")
+lines(rep(7.5,16), measure[Day==7],type="p")
+```
+Interpretation: The above boxplots represent the measures of strength on different days. Roughly, we can say that the boxplots are more or less equal variances in the measures of strengths within subjects. 
+
+d) Spaghetti plot:
+```{r}
+interaction.plot(Day,ex1$Subject,ex1$measure, col=c(1:8),legend=F,xlab="Days",ylab = "measure of strength",main="Spaghetti Plot",type="l",lty = c(1,11))
+length(Day)
+```
+Interpretation:The above plot shows the time trend of the strength measures per subject. Each line represents the strength of one subject across the time (days). There is a variation of strength within and between subjects across time. 
+
+Correlation Matrix:
+```{r}
+Day <- rep(c(1,2,3,4,5,6,7),16)
+round(cor(matrix(c(measure[Day==1],measure[Day==2],measure[Day==3],measure[Day==4],measure[Day==5],measure[Day==6],measure[Day==7]),16,7)),2)
+```
+Interpretation: In the above correlation matrix, no correlation value is closer to +1 or -1. It will be inappropriate to use an independence model.
+
+Model-based Inference:
+
+Model with constant Time trend:
+```{r}
+mod1<-lmer(measure ~ 1 + (1|Subject),data = ex1)
+summary(mod1)
+```
+Confidence intervals for beta_0, sigma^2 and sigma b_0i^2
+```{r}
+confint(mod1)
+```
+Interpretation: The intercept for this model is 4.39 which is the median strength measure at the baseline (Day=0) with 95% CI(4.37,4.41). The variance of the random effect between subjects is 12.526, which supports the evidence obtained from the above plots.
+
+Checking model assumptions:
+
+Plotting observed and fitted trajectories: 
+```{r}
+xyplot(resid(mod1)~Day|ex1$Subject,layout=c(4,4),type='p',panel = function (x,y){panel.xyplot(x,y,col = "dark blue");panel.loess(x,y,span=1.0,col = "maroon",lty=1,lwd=1.5)},xlab = "Days",ylab="Residuals",aspect = "fill",strip = FALSE)
+```
+qqplots:
+```{r}
+qqnorm(resid(mod1))
+qqline(resid(mod1))
+```
+Interpretation: Although not all the points align with the qqline, the qqplot does not show any specific patterns or skewness. Thus, there is no data-based evidence that the normality assumption is violated.
+
+Anderson-Darling test of Normality:
+```{r}
+ad.test(resid(mod1))
+```
+Interpretation: The p value for the Anderson-Darling test of mod1 is 0.32 which is greater than the level of significance 0.05. Therefore, we have no enough evidence to reject the null hypothesis that the data is normally distributed.
+
+Equal variance:
+```{r}
+plot(mod1,main="residual vs fitted values")
+```
+Interpretation: In the above plot, the residual points are randomly spread around the residual line, providing evidence of Homoscedasticity. Also, the plot doesnot show any evidence of violation of linearity assumption in the data.
+
+To understand the random effects for each subject:
+```{r}
+ranef(mod1)
+```
+Model with Time trend:
+```{r}
+mod.lmer<-lmer(measure ~ 1 + Day + (1|Subject),data=ex1)
+summary(mod.lmer)
+```
+Confidence Intervals:
+```{r}
+confint(mod.lmer)
+```
+Interpretation:When compared to the previous model with constant time trend, there is no significant change in the intercept of the measure variable and the variance for the Day variable under fixed effects is not very significant.
+
+Model assumptions:
+```{r}
+qqnorm(resid(mod.lmer))
+qqline(resid(mod.lmer ))
+```
+Interpretation:The above qqplot does not show any evidence that the data is violating the normality assumption.
+
+Anderson-Darling test for normality:
+```{r}
+ad.test(resid(mod.lmer))
+```
+Interpretation: The P value of the above Anderson-Darling test is 0.48, which is greater than the significance lvel 0.05. Therefore, we fail to reject the null hypothesis that the data is normally distributed.
+```{r}
+plot(mod.lmer)
+```
+Interpretation:The residual points are not randomly spread around the residual line which provides evidence that the variances are not equal.
+
+For subject level random effects:
+```{r}
+ranef(mod.lmer)
+```
+```{r}
+0.064586^2 
+```
+
+
+
+
+
+
+
+
+

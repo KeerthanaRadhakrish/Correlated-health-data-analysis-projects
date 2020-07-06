@@ -1,0 +1,196 @@
+---
+title: "Project-5"
+author: "Keerthana Radhakrishnan"
+date: "3/13/2020"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+```{r}
+library(tidyverse)
+library(gmodels)
+library(car)
+library(lme4)
+library(gee)
+library(geepack)
+```
+
+Reading the data:
+```{r}
+drug<-read.csv("final-drugdata.csv",as.is=T,header=T,sep=",")
+drug$fgrade<-factor(drug$grade)
+drug$fschool<-factor(drug$school)
+drug
+summary(drug)
+```
+(a) Exploratory Data Analysis:
+```{r}
+attach(drug)
+sam.prop<-glm(druguse~1+counseling+fgrade,data=drug,family="binomial")
+summary(sam.prop)
+
+a<-drug %>%
+  mutate(pred_val= predict(sam.prop,type="response"))
+ggplot(a,aes(x=fgrade,y=pred_val))+
+  geom_line(aes(group=factor(counseling),col=factor(counseling),linetype=factor(counseling)))+
+  geom_point(mapping = aes(x=fgrade,y=pred_val,shape=factor(counseling)))+
+  xlab("Grade")+
+  ylab("Proportion")+
+  ggtitle("Sample proportions of drug use for each school grade and counselling") 
+  theme(plot.background = element_rect(fill = "#BFD5E5"))
+  
+pred_val= predict(sam.prop,type="response")
+log_pred<-logit(pred_val)
+ggplot(a,aes(x=fgrade,y=log_pred))+
+  geom_point(mapping = aes(x=fgrade,y=log_pred,shape=factor(counseling)))+
+  geom_line(aes(group=factor(counseling),col=factor(counseling),linetype=factor(counseling)))+
+  xlab("Grade")+
+  ylab("logit(Proportion)")+
+  ggtitle("logit(proportions) of drug use for each school grade and counselling") 
+  theme(plot.background = element_rect(fill = "#BFD5E5")) 
+sam.prop1<-glm(druguse~1+fschool+fgrade+counseling,data=drug,family="binomial")
+summary(sam.prop1)
+
+c<-drug %>%
+  mutate(pred_val1= predict(sam.prop1,type="response"))
+ggplot(c, aes(x=fgrade, y=pred_val1, colour=factor(counseling), shape = fschool,linetype= fschool,group=interaction(factor(counseling), fschool))) + 
+  geom_point() + geom_line()+ 
+  xlab("Grade")+
+  ylab("Proportion")+
+  ggtitle("Sample proportions of drug use categorized by intervention and school") 
+  theme(plot.background = element_rect(fill = "#BFD5E5"))
+```
+From the above ggplot, we can see that there is no difference in the proportions of marijuana use across schools.
+
+(b)
+QIC stands for Quasi-likelihood Information criterion. For the estimation of GEEs, we cannot use AIC or BIC as the GEEs estimation is based on the quasi-likelihood rather than maximum likelihood.
+
+(c)
+QIC:
+Model1: gee model without school and grade as continuous variable:
+```{r}
+mod.1<-geeglm(druguse~counseling+grade,data=drug,id=id,family="binomial",corstr = "exchangeable")
+#summary(mod.1)
+Q1<-QIC(mod.1)
+mod.1s<-geeglm(druguse~counseling+grade+fschool,data=drug,id=id,family="binomial",corstr = "exchangeable")
+#summary(mod.1s)
+Q2<-QIC(mod.1s)
+grade2<-drug$grade^2
+mod.2<-geeglm(druguse~counseling+grade+grade2,data=drug,id=id,family="binomial",corstr = "exchangeable")
+#summary(mod.2)
+Q3<-QIC(mod.2)
+mod.2s<-geeglm(druguse~counseling+grade+grade2+fschool,data=drug,id=id,family="binomial",corstr = "exchangeable")
+#summary(mod.2s)
+Q4<-QIC(mod.2s)
+qic.f1<- rbind(Q1,Q2,Q3,Q4)
+#qic.f<-rbind(round(Q1,4),round(Q2,4),round(Q3,4),round(Q4,4))
+row.names(qic.f1)<-c("mod 1","mod 2","mod 3","mod 4")
+qic.f1
+Q1
+Q2
+Q3
+Q4
+an<-anova(mod.2s,mod.2)
+an
+```
+The p value for the anova testing the effect of school variable in the model is 0.83 which is lesser than the significance level 0.05. Hence, there is no enough evidence to reject the null hypothesis that there is no effect of school on the drug use.
+
+The QIC statistic for model without quadratic trend for grade (1825.95) is lesser than the QIC statistic for the model with quadratic trend for grade (1825.53). Hence, model 1 would be the one with the quadratic trend.
+
+The final model:
+model1:
+$logit(phat)= \beta_0 + \beta_1(counseling)+\beta_2(grade)$
+
+**Table showing point estimates, CIs, Standard errors and P values:**
+```{r}
+summ1<-summary(mod.2)$coefficients
+confint.geeglm <- function(object, parm, level = 0.95) {
+    cc <- coef(summary(object))
+    citab <- with(as.data.frame(cc),
+                  cbind(lwr=Estimate-2*Std.err,
+                        upr=Estimate+2*Std.err))
+    rownames(citab) <- rownames(cc)
+    citab[parm,]
+}
+confidence.int<-confint.geeglm(mod.2)
+tab1<-cbind(summ1,confidence.int)[-3]
+tab1
+```
+(d) GEE model with year treated as categorical variable:
+```{r}
+drug$fgrade<-relevel(drug$fgrade,ref="12")
+mod.sc<-geeglm(druguse~counseling+fgrade,data=drug,id=id,family="binomial",corstr = "exchangeable")
+summ2<-summary(mod.sc)$coefficients
+summ2
+qic2<-QIC(mod.sc)
+qic2
+```
+$logit(phat)= \beta_0 + \beta_1(counseling)+\beta_2(grade9)+\beta_3(grade10)+\beta_4(grade11)$
+
+(e) Model with senior and junior (junior, sophomore and freshman):
+```{r}
+drug$year<-NA
+drug$year[which(drug$fgrade==12)]<-"senior"
+drug$year[which(drug$fgrade==9 | drug$fgrade==10 | drug$fgrade==11)]<-"junior"
+
+mod.c<-geeglm(druguse~coun+year,data=drug,id=id,family="binomial",corstr = "exchangeable")
+summ3<-summary(mod.c)$coefficients
+summ3
+QIC(mod.c)
+```
+Model:
+$logit(phat)= \beta_0 + \beta_1(counseling)+\beta_2(senior)$
+```{r}
+model1<-mod.2
+model2<-mod.sc
+model3<-mod.c
+```
+
+(f)
+model3 is the most prefered model because it has the lowest QIC value.
+The final Model will be:
+$logit(phat)= \beta_0 + \beta_1(counseling)+\beta_2(senior)$
+```{r}
+coun<-factor(drug$coun)
+con.1<-confint.geeglm(mod.c)
+OR.c<-exp(mod.c$coefficients)
+CI.OR<-exp(confint.geeglm(mod.c))
+OR<-cbind(OR.c,CI.OR)
+colnames(OR) <- c("OR", "Lower OR", "Upper OR")
+OR
+
+?odds.ratio()
+```
+Test at alpha=0.10:
+```{r}
+anova(model3)
+```
+The p value when testing the effect of intervention is 0.1263 which is greater than the significance level 0.10. Hence, there is no sufficient evidence to reject the null hypothesis that there is no effect of intervention on drug use.
+
+(g)Interaction between counseling and grade:
+```{r}
+mod.int<-geeglm(druguse~counseling+year+counseling:year,data=drug,id=id,family="binomial",corstr = "exchangeable")
+summary(mod.int)
+```
+The model will be represented as:
+$logit(phat)= \beta_0 + \beta_1(counseling)+\beta_2(year)+\beta_3(counseling:year)$
+
+The p value for the interaction term between counseling and year is 0.843 which is greater than the significance level 0.10. Hence, we have no sufficient evidence to reject the null hypothesis that there is no effect of the interaction term on the model.
+
+(h) 
+If at all, there is an interaction between the counseling and year, 
+
+
+(i) 
+Poisson regression can be used to analyze data if the response variable is left as count.
+
+
+
+
+
+
+
+
+
+

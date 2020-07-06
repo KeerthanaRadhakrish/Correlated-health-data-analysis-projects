@@ -1,0 +1,151 @@
+---
+title: "Project 3"
+author: "Keerthana Radhakrishnan"
+date: "2/17/2020"
+output: word_document
+---
+```{r}
+require(tidyverse)
+require(nlme)
+require(lattice)
+require(gmodels)
+require(CorrMixed)
+require(Hmisc)
+```
+
+```{r}
+aut<-read.csv("autismdata.csv",header =TRUE,as.is=TRUE,sep = ",")
+aut$grp<-as.character(aut$grp)
+```
+**(a) Exploratory Data Analysis:**
+Summary Statistics:
+```{r}
+ds<- function(x){round(c(MEAN=mean(x,na.rm=TRUE),MEDIAN=median(x,na.rm=TRUE),MIN=min(x,na.rm=TRUE),MAX=max(x,na.rm=TRUE),SD=sd(x,na.rm=TRUE)),1)}
+summ_age<-mApply(aut$socialscore,aut$age, ds)
+rownames(summ_age)<-c("Age 2","Age 3","Age 5","Age 9","Age 13")
+summ_grp<-mApply(aut$socialscore,aut$grp, ds)
+rownames(summ_grp)<-c("Low","Medium","High")
+summ_age
+summ_grp
+```
+Trellis plot:
+```{r}
+Age <- rep(c(1,2,3,4,5),210)
+xyplot(aut$socialscore~aut$age|aut$grp,layout=c(3,1),main="Trellis plot: Socialization score vs age by group",type='p',panel = function (x,y){panel.xyplot(x,y,col = "dark blue");panel.loess(x,y,span=1.0,col = "maroon",lty=1,lwd=1.5)},xlab = "Age", ylab = "Social score",aspect = "fill",strip = FALSE)
+```
+(b)**Model building:**
+
+(1) Linear trend with different intercepts and same slope:
+```{r}
+mod_1<-lme(socialscore~1+age+grp,random = ~1 | id,na.action=na.omit,method = "ML",data=aut)
+summary(mod_1)
+```
+(b) Linear trend with different intercepts and different slopes:
+```{r}
+mod_2<-lme(socialscore~1+age+grp+age*grp,random = ~1|id,data=aut,na.action=na.omit,method="ML")
+summary(mod_2)
+plot(resid(mod_2)~fitted(mod_2),main="standardized residual&fitted")
+lines(lowess(resid(mod_2)~fitted(mod_2)))
+```
+
+
+*Interpretation:*
+From the residual versus fitted plot, we can see that there is unequal variance. The data is also not linear. Hence, this data violates the assumption of linearity and homoscedasticity.
+
+(c) Quadratic trends for each group:
+```{r}
+aut$age2<-(aut$age)^2
+mod_quad<-lme(socialscore~1+age2+grp+age2*grp,random=~1|id,data = aut,na.action=na.omit,method="ML")
+summary(mod_quad)
+```
+(d) Linear trend for group3 and quadratic trends for group1 and group2:
+```{r}
+aut$grp1<-as.factor(aut$grp==1)
+aut$grp2<-as.factor(aut$grp==2)
+aut$grp3<-as.factor(aut$grp==3)
+mod.qt<- lme(socialscore ~ age + age2 + grp2 + grp3 + age*grp3+ age2*grp2, random = ~1|id, method= "ML", data= aut, na.action = na.omit  )
+summary(mod.qt)
+```
+c) Perform goodness of fit checks for your selected model (e.g., residual plots, normal plots). Write down using notation (with beta coefficients and distributional assumptions for random effects and residuals) your selected model. Present a table with point and interval estimates of all model parameters, along with standard errors and p-values.
+```{r}
+mod_quad<-lme(socialscore~1+age2+grp+age2*grp,random=~1|id,data = aut,na.action=na.omit,method="ML")
+plot(mod_quad,main="Residuals versus fitted model plot")
+```
+*Interpretation:*From the above plot, we can see that the data points have unequal variance. The assumption of homoscedasticity is violated. There is no evidence available to show that the linearity assumption is violated from the above plot.
+```{r}
+qres <-t(ranef(mod_quad))
+qqnorm(qres,main = "qqplot for Standard Residuals")
+qqline(qres)
+
+qran <- resid(mod_quad)
+qqnorm(qran, main = "qqplot for Ranef Residuals")
+qqline(qran)
+```
+*Interpretation:*Both the above qqplots show that the data is not normally distributed.
+
+Write down using notation (with beta coefficients and distribu- tional assumptions for random effects and residuals) your selected model:
+$$mean(socialscore) \sim \beta_0 +\beta_1(age2) +\beta_2(grp2) + \beta_3(grp3) + \beta_4(age2*grp2) + \beta_5(age2*grp3)$$
+grp 1: $$mean(socialscore) \sim \beta_0 +\beta_1(age2)$$
+
+grp 2: $$mean(socialscore) \sim \beta_0 +\beta_1(age2)+\beta_2(grp2)+\beta_4(age2*grp2) $$
+
+grp 3: $$mean(socialscore) \sim \beta_0 +\beta_1(age2)+ \beta_3(grp3) + \beta_5(age2*grp3) $$
+
+Table with point and interval estimates of all model parameters, along with standard errors and p-values:
+```{r}
+n<-summary(mod_quad)
+estimates<-n$tTable
+m<-intervals(mod_quad)
+intervals<-m$fixed[,c(1,3)]
+table.para<-round(cbind(estimates,intervals),3)
+table.para
+```
+**(d) Point and interval estimates of the mean socialization score at ages 5, 9, and 13 separately for each language group:**
+```{r}
+cg1_5<- estimable(mod_quad,c(1,25,0,0,0,0),conf.int = 0.95) 
+cg2_5 <- estimable(mod_quad,c(1,25,1,0,25,0),conf.int = 0.95) 
+cg3_5 <- estimable(mod_quad,c(1,25,0,1,0,25),conf.int = 0.95) 
+ccg_5<-rbind(cg1_5,cg2_5,cg3_5)
+
+cg1_9 <- estimable(mod_quad,c(1,81,0,0,0,0),conf.int = 0.95) 
+cg2_9 <- estimable(mod_quad,c(1,81,1,0,81,0),conf.int = 0.95) 
+cg3_9 <- estimable(mod_quad,c(1,81,0,1,0,81),conf.int = 0.95) 
+ccg_9<-rbind(cg1_9,cg2_9,cg3_9)
+
+cg1_13 <- estimable(mod_quad,c(1,169,0,0,0,0),conf.int = 0.95) 
+cg2_13 <- estimable(mod_quad,c(1,169,1,0,169,0),conf.int = 0.95) 
+cg3_13 <- estimable(mod_quad,c(1,169,0,1,0,169),conf.int = 0.95) 
+ccg_13<-rbind(cg1_13,cg2_13,cg3_13)
+
+est<-round(rbind(ccg_5,ccg_9,ccg_13)[c(1,6,7)],3)
+rownames(est)<-c("Age 5:Low","Age 5:Medium","Age 5:High","Age 9:Low","Age 9:Medium","Age 9:High","Age 13:Low","Age 13:Medium","Age 13:High")
+est
+```
+**e) Point and interval estimates of the difference in mean socialization score at ages 5, 9, and 13 between the language groups:**
+```{r}
+diff_1_5<-estimable(mod_quad,c(0,0,1,0,25,0),conf.int = 0.95)
+diff_2_5<-estimable(mod_quad,c(0,0,0,1,0,25),conf.int = 0.95)
+diff_3_5<-estimable(mod_quad,c(0,0,-1,1,25,25),conf.int = 0.95)
+
+diff_1_9<-estimable(mod_quad,c(0,0,1,0,81,0),conf.int = 0.95)
+diff_2_9<-estimable(mod_quad,c(0,0,0,1,0,81),conf.int = 0.95)
+diff_3_9<-estimable(mod_quad,c(0,0,-1,1,81,81),conf.int = 0.95)
+
+diff_1_13<-estimable(mod_quad,c(0,0,1,0,169,0),conf.int = 0.95)
+diff_2_13<-estimable(mod_quad,c(0,0,0,1,0,169),conf.int = 0.95)
+diff_3_13<-estimable(mod_quad,c(0,0,-1,1,169,169),conf.int = 0.95)
+
+diff_5<-rbind(diff_1_5,diff_2_5,diff_3_5)
+diff_9<-rbind(diff_1_9,diff_2_9,diff_3_9)
+diff_13<-rbind(diff_1_13,diff_2_13,diff_3_13)
+
+rownames(diff_5) <- c("age 5:Medium-Low","age 5:High-Low","age 5:High-Medium")
+rownames(diff_9) <- c("age 9:Medium-Low","age 9:High-Low","age 9:High-Medium")
+rownames(diff_13) <- c("age 13:Medium-Low","age 13:High-Low","age 13:High-Medium")
+
+diff<-round(rbind(diff_5,diff_9,diff_13)[c(1,6,7,5)],3)
+diff
+```
+
+
+

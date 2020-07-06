@@ -1,0 +1,125 @@
+---
+title: "Project 1"
+author: "Keerthana Radhakrishnan"
+date: "1/15/2020"
+output:
+  word_document: default
+  html_document: default
+---
+```{r}
+sat<-read.csv("SATdata.csv",header=T,sep=",",as.is=T)
+```
+Exploratory data analysis: scatterplots
+```{r}
+par(mfrow=c(1,2))
+plot(SATscore~Salary,data=sat,main="SATscore vs salary")
+lines(lowess(sat$Salary,sat$SATscore),col="green")
+plot(SATscore~Percent,data=sat,main="SATscore vs percent")
+lines(lowess(sat$Percent,sat$SATscore),col="red")
+```
+Interpretation:
+Both salary and percent do not have a linear association with the SATscore i.e.,both scatterplots suggests to include quadratic terms for salary and percent in the regression model. 
+
+(b) Fitting the model
+```{r}
+mod<-lm(SATscore~Salary+Percent,data=sat)
+summary(mod)
+```
+Checking the model assumptions
+```{r}
+par(mfrow=c(2,2))
+
+qqnorm(rstandard(mod),main="qqplot",cex.main=0.8)
+qqline(rstandard(mod))
+plot(rstandard(mod)~fitted(mod),col=124,main="standardized residual&fitted",cex.main=0.8)
+lines(lowess(rstandard(mod)~fitted(mod)))
+plot(rstandard(mod)~sat$Salary,main="standardized residuals&salary",cex.main=0.8)
+lines(lowess(rstandard(mod)~sat$Salary))
+plot(rstandard(mod)~sat$Percent,main="standardized residuals&percent",cex.main=0.8)
+lines(lowess(rstandard(mod)~sat$Percent))
+```
+Interpretation:
+The qq plot shows that the data is normally distributed.
+The standardised residuals vs fitted model shows non-linearity with a possible right-skewed data. 
+Both standardised residuals vs salary and standardised residuals vs percent show non-linear trend in the plots.
+```{r}
+library(nortest)
+ad.test(rstandard(mod))
+```
+As the p value in the above test (0.60) is greater than the significance level 0.05, we can say that there is an evidence that the data is normal.
+
+(c) quadratic equation model
+```{r}
+Percent2<-sat$Percent^2
+mod.quad<-lm(SATscore~Salary+Percent+Percent2,data=sat)
+summary(mod.quad)
+```
+```{r}
+par(mfrow=c(2,3))
+qqnorm(rstandard(mod.quad),main="qqplot for mod.quad",cex.main=0.8)
+qqline(rstandard(mod.quad))
+plot(rstandard(mod.quad)~fitted(mod.quad),col=124,main="standardized residual&fitted",cex.main=0.8)
+lines(lowess(rstandard(mod.quad)~fitted(mod.quad)))
+plot(rstandard(mod.quad)~sat$Salary,main="standardized residuals&salary",cex.main=0.8)
+lines(lowess(rstandard(mod.quad)~sat$Salary))
+plot(rstandard(mod.quad)~sat$Percent,main="standardized residuals&percent",cex.main=0.8)
+lines(lowess(rstandard(mod.quad)~sat$Percent))
+plot(rstandard(mod.quad)~Percent2,main="standardized residuals&percent2",cex.main=0.8)
+lines(lowess(rstandard(mod.quad)~Percent2))
+
+library(nortest)
+ad.test(rstandard(mod.quad))
+```
+The Anderson-Darling Test is still greater than 0.05, which ensures the normality of the model. The qqplot also shows that the data is normally distributed.
+The residuals vs fitted plot is slightly deviated from the straight line, hence, showing slight non-linearity. 
+While plots for standard residuals and percent related terms show linearity, the plot of standard residuals against salary still shows non- linearity.
+
+(d) including quadratic terms for both Salary and Percent variables
+```{r}
+Salary2<-sat$Salary^2
+mod.quad2<-lm(SATscore~Salary+Percent+Percent2+Salary2,data=sat)
+summary(mod.quad2)
+```
+From the above R output, we can see that the p value for 'Salary2', the quadratic term of Salary is 0.22, whch is greater than the level of significance 0.05. Hence, we can say that this quadratic term does not have a significant effect on the SATscore. Hence, we can exclude Salary2 from the model.
+
+(e) Interaction between salary and percent
+```{r}
+mod.int<-lm(SATscore~Salary+Percent+Salary*Percent+Salary*Percent2,data=sat)
+summary(mod.int)
+anova(mod.quad,mod.int)
+```
+From the above R output, we can see that both the interaction terms i.e., Salary:Percent and Salary:Percent2 have p values greater than the level of significance 0.05. Also, the F value is 0.195, which is also greater than 0.05. Hence, we can conclude that there is no statistically significant difference between the two models, mod.quad and mod.int.  
+
+f) The final model will be:
+mean(SATscore) = beta0 + beta1(Salary) + beta2(Percent) + beta3(Percent2)
+```{r}
+summary(mod.quad)
+confint(mod.quad)
+```
+            point Estimates   Conf.int        Std.error     p-value       
+Salary       1.803e+00        (0.19,3.4)      7.998e-01     0.029 *  
+Percent     -6.646e+00        (-8.06,-5.2)    7.028e-01     2.33e-12 ***
+Percent2     5.075e-02        (0.03,0.06)     8.924e-03     8.51e-07 ***
+
+
+(g)
+```{r}
+library(gmodels)
+estimable(mod.quad,c(1,25,5,25),conf.int = 0.95)
+estimable(mod.quad,c(1,25,30,900),conf.int = 0.95)
+estimable(mod.quad,c(1,25,70,4900),conf.int = 0.95)
+
+estimable(mod.quad,c(1,35,5,25),conf.int = 0.95)
+estimable(mod.quad,c(1,35,30,900),conf.int = 0.95)
+estimable(mod.quad,c(1,35,70,4900),conf.int = 0.95)
+
+estimable(mod.quad,c(1,45,5,25),conf.int = 0.95)
+estimable(mod.quad,c(1,45,30,900),conf.int = 0.95)
+estimable(mod.quad,c(1,45,70,4900),conf.int = 0.95)
+```
+     Salary           Percent
+                   5%    30%    70%
+    25,000   |    1052   930    867
+    35,000   |    1070   948    885
+    45,000   |    1088   966    903
+
